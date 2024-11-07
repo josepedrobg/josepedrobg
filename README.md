@@ -20,31 +20,23 @@ MongoDB (pode ser local ou MongoDB Atlas)
  Instalação
 Clone este repositório para sua máquina local:
 
-bash
-Copiar código
 git clone https://github.com/SeuUsuario/SistemaGerenciamentoRegistrosMedicos.git
 Navegue até o diretório do projeto:
 
-bash
-Copiar código
 cd SistemaGerenciamentoRegistrosMedicos
 Crie um ambiente virtual (opcional, mas recomendado):
 
-bash
-Copiar código
 python -m venv venv
 Ative o ambiente virtual:
 
 No Windows:
 venv\Scripts\activate
 No macOS/Linux:
-bash
+
 
 source venv/bin/activate
 Instale as dependências:
 
-bash
-Copiar código
 pip install -r requirements.txt
 Configure o MongoDB:
 
@@ -53,12 +45,10 @@ Substitua o valor da variável uri no código (uri = "mongodb+srv://user:passwor
 Uso
 Execute o script principal para iniciar o sistema:
 
-bash
 python main.py
 Ao iniciar, o sistema permitirá que o profissional de saúde se cadastre, faça login, configure o 2FA e acesse as funcionalidades de gerenciamento de registros médicos.
 
 Estrutura do Projeto
-bash
 
 SistemaGerenciamentoRegistrosMedicos/
 │
