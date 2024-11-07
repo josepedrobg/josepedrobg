@@ -1,0 +1,197 @@
+from pymongo.mongo_client import MongoClient
+from cryptography.fernet import Fernet
+import bcrypt
+import pyotp
+import qrcode
+import os
+uri = "mongodb+srv://user:123@cluster0.lflaa.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+client = MongoClient(uri)
+meu_banco = client['projetoBruno4bim']
+colecaoProfissionais = meu_banco['Profissionais']
+colecaoRegistros = meu_banco['Registros']
+
+def hash_senha(senha):
+    return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+
+# Função para verificar senha
+def verificar_senha(senha, hashed):
+    return bcrypt.checkpw(senha.encode('utf-8'), hashed)
+
+
+def exibir_qr_code_2fa(nome, secret_2fa):
+    # Gera a URI TOTP para o Google Authenticator
+    totp = pyotp.TOTP(secret_2fa)
+    uri = totp.provisioning_uri(name=nome, issuer_name="Sistema de Registro Médico")
+
+    # Gera o QR Code
+    qr = qrcode.make(uri)
+    qr.show()  # Exibe o QR Code para o usuário
+
+    print(f"Escaneie este QR Code no Google Authenticator para configurar o 2FA.")
+# Função de autenticação de 2FA
+def autenticar_2fa(secret):
+    totp = pyotp.TOTP(secret)
+    codigo = input("Digite o código 2FA do Google Authenticator: ")
+    return totp.verify(codigo)
+
+
+def cadastrarFuncionario(nome, senha, credencial, colecaoProfissionais):
+    # Verificar se o usuário já existe
+    if colecaoProfissionais.find_one({"nome": nome}):
+        print("Erro: Esse usuário já está cadastrado!")
+        return
+
+    # Hash da senha
+    hash_senha_funcionario = hash_senha(senha)
+
+    # Gerar chave secreta para o 2FA
+    secret_2fa = pyotp.random_base32()
+
+    # Inserir o novo funcionário na coleção de profissionais
+    colecaoProfissionais.insert_one({
+        "nome": nome,
+        "credencial": credencial,
+        "senha": hash_senha_funcionario,
+        "2fa_secret": secret_2fa
+    })
+
+    print(f"Funcionário '{nome}' cadastrado com sucesso!")
+
+def criacaoRegistros(credencial, nome,telefone,carteirinha,T,registros):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    registroNumero = input("Digite o número do registro\n")
+    credencialCriptografado = f.encrypt(credencial.encode())
+    nomeCriptografado = f.encrypt(nome.encode())
+    telefoneCriptografado = f.encrypt(telefone.encode())
+    carteirinhaCriptografado = f.encrypt(carteirinha.encode())
+    tratamentoCriptografado = f.encrypt(T.encode())
+    dadosRegistros = {"credencial": credencialCriptografado, "nome": nomeCriptografado, "telefone": telefoneCriptografado, "carteirinha": carteirinhaCriptografado,"tratamento": tratamentoCriptografado, "key": key, "registro": registroNumero}
+    registros.insert_one(dadosRegistros)
+
+def acessoRegistros(registroDesejado, registros):
+    # Buscar o registro desejado no banco de dados
+    registroConsulta = registros.find_one({"registro": registroDesejado})
+    key = registroConsulta["key"]
+    f = Fernet(key)
+    nome = registroConsulta["nome"]
+    telefone = registroConsulta["telefone"]
+    carteirinha = registroConsulta["carteirinha"]
+    tratamento = registroConsulta["tratamento"]
+
+    nomeDescriptografado = f.decrypt(nome.decode())
+    telefoneDescriptografado = f.decrypt(telefone.decode())
+    carteirinhaDescriptografado = f.decrypt(carteirinha.decode())
+    tratamentoDescriptografado = f.decrypt(tratamento.decode())
+
+    print("Dados do Registro:")
+    print(f"Nome: {nomeDescriptografado}")
+    print(f"Telefone: {telefoneDescriptografado}")
+    print(f"Carteirinha: {carteirinhaDescriptografado}")
+    print(f"Tratamento: {tratamentoDescriptografado}")
+def acessoAtualizarDeletar(registros):
+    print("Digite o registro desejado")
+    registroDesejado = input()
+    registroConsulta = registros.find_one({"registro": registroDesejado})
+    key = registroConsulta["key"]
+    f = Fernet(key)
+    if registroConsulta:
+        print("Registro encontrado:", registroConsulta)
+        print(
+            "Deseja atualizar ou deletar esse registro? \n1- Atualizar \n2- Deletar \n--- Caso não queira deletar nem atualizar, digite qualquer tecla para encerrar a consulta")
+        acao = input()
+        if acao == "1":
+            print('Deseja atualizar\n1- Nome\n2- Telefone\n3- Carteirinha\n4- Tratamento')
+            campoAtualizar = input()
+            if campoAtualizar == '1':
+                print('Digite o novo nome do registro')
+                novoNomeRegistro = input()
+                nomeCriptografado = f.encrypt(novoNomeRegistro.encode())
+                registros.update_one({"registro": registroConsulta["registro"]}, {"$set": {"nome": nomeCriptografado}})
+            elif campoAtualizar == '2':
+                print('Digite o novo telefone do registro')
+                novoTelefoneRegistro = input()
+                telefoneCriptografado = f.encrypt(novoTelefoneRegistro.encode())
+                registros.update_one({"registro": registroConsulta["registro"]}, {"$set": {"telefone": telefoneCriptografado}})
+            elif campoAtualizar == '3':
+                print('Digite a nova carteirinha do registro')
+                novaCarteirinhaRegistro = input()
+                carteirinhaCriptografado = f.encrypt(novaCarteirinhaRegistro.encode())
+                registros.update_one({"registro": registroConsulta["registro"]}, {"$set": {"carteirinha": carteirinhaCriptografado}})
+            elif campoAtualizar == '4':
+                print('Digite a novo tratamento do registro')
+                novoTratamentoProduto = input()
+                tratamentoCriptografado = f.encrypt(novoTratamentoProduto.encode())
+                registros.update_one({"registro": registroConsulta["registro"]}, {"$set": {"categoria": tratamentoCriptografado}})
+            print("Produto atualizado com sucesso!")
+        elif acao == "2":
+            registros.delete_one({"registro": registroConsulta["registro"]})
+            print("Registro deletado com sucesso!")
+    else:
+        print("Registro não encontrado.")
+
+
+
+print("Bem vindo ao Sistema de Gerenciamento de Registros Médicos")
+print("Caso você não tenha cadastro, digite 1")
+valorCadastro = input()
+if valorCadastro == "1":
+    print("Digite seu nome")
+    nomeCadastro = input()
+    print("Digite uma senha")
+    senhaCadastro = input()
+    print("Digite sua credencial")
+    credencialCadastro = input()
+    cadastrarFuncionario(nomeCadastro,senhaCadastro,credencialCadastro, colecaoProfissionais)
+
+try:
+    print(("Digite seu nome"))
+    nomeProfissional = input()
+    print("Digite sua senha")
+    senhaProfissional = input()
+    hashSenha = hash_senha(senhaProfissional)
+    secret_2fa = pyotp.random_base32()
+    print(f'Seu código de verificação é: {secret_2fa}')
+    colecaoProfissionais.update_one({"nome": nomeProfissional}, {"$set": {"2fa_secret": secret_2fa}})
+    consultaProfissional = colecaoProfissionais.find_one({"nome": nomeProfissional})
+    exibir_qr_code_2fa(nomeProfissional, secret_2fa)
+    print(f"Profissional {nomeProfissional} configurado com sucesso. Use o Google Authenticator para gerar os códigos 2FA.")
+    if consultaProfissional and verificar_senha(senhaProfissional, consultaProfissional["senha"]):
+        print("Senha correta! Agora, insira o código 2FA.")
+        # Solicita e verifica o código 2FA
+        if autenticar_2fa(consultaProfissional["2fa_secret"]):
+            print("Autenticação de dois fatores bem-sucedida! Acesso autorizado.")
+            while True:
+                print("1- Criação de Registros\n2- Acesso de Registros\n3- Atualizar/Deletar Registros")
+                escolha = input()
+                if escolha == "1":
+                    credencialMedico = input('Digite a credencial do médico responsável\n')
+                    nomePaciente = input('Digite o nome do paciente\n')
+                    telefonePaciente = input('Digite o telefone do paciente\n')
+                    carteirinhaPaciente = input('Digite a carteirinha do paciente\n')
+                    tratamento = input('Digite o tratamento do paciente\n')
+                    criacaoRegistros(credencialMedico, nomePaciente, telefonePaciente, carteirinhaPaciente, tratamento, colecaoRegistros)
+                if escolha == "2":
+                    print("Qual registro você deseja ver?")
+                    reg2 = input()
+                    acessoRegistros(reg2, colecaoRegistros)
+                if escolha == "3":
+                    acessoAtualizarDeletar(colecaoRegistros)
+                continuar = input("Deseja continuar testando o código? (s/n): ").strip().lower()
+                if continuar != 's':
+                    break
+        else:
+            print("Autenticação de dois fatores falhou! Código 2FA incorreto.")
+    else:
+        print("Nome de usuário ou senha incorretos.")
+
+except Exception as e:
+    print(e)
+
+
+
+
+
+
+
+
